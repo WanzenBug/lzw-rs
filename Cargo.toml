@@ -1,0 +1,26 @@
+[package]
+name = "lzw-rs"
+version = "0.1.0"
+authors = ["WanzenBug <moritz9422@gmail.com>"]
+
+[lib]
+name = "lzw"
+path = "src/lib.rs"
+
+
+[[bin]]
+name = "encode"
+path = "src/bin/encode.rs"
+
+[[bin]]
+name = "decode"
+path = "src/bin/decode.rs"
+
+[features]
+bin = [ "clap" ]
+default-features = []
+
+[dependencies]
+bitstream-rs = "0.1.0"
+
+clap = { version = "2.20.0", optional = true }
