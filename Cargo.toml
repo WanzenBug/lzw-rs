@@ -3,7 +3,7 @@ name = "lzw-rs"
 version = "0.1.0"
 authors = ["WanzenBug <moritz9422@gmail.com>"]
 description = "Basic implementation of the LZW data compression algorithm"
-
+license = "MIT"
 
 [lib]
 name = "lzw"
