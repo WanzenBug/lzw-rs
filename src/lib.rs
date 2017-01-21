@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::io::Result as IOResult;
 use std::io::Error as IOError;
 use std::io::ErrorKind as IOErrorKind;
+use std::usize;
 
 use bitstream::{BitWriter, BitReader};
 
@@ -16,6 +17,7 @@ pub struct LZWWriter<W> where W: Write {
     lookup: Vec<LZWSearchTreeNode>,
     state: LZWWriterState,
     enumerator: BitSizeEnumerator,
+    dict_size: usize
 }
 
 enum LZWWriterState {
@@ -25,6 +27,10 @@ enum LZWWriterState {
 
 impl<W> LZWWriter<W> where W: Write {
     pub fn new(writer: W) -> Self {
+        LZWWriter::with_dictsize(writer, usize::max_value())
+    }
+
+    pub fn with_dictsize(writer: W, size: usize) -> Self {
         let mut v = Vec::with_capacity(256);
         for _ in 0..256 {
             v.push(LZWSearchTreeNode {
@@ -38,6 +44,7 @@ impl<W> LZWWriter<W> where W: Write {
             lookup: v,
             state: LZWWriterState::Empty,
             enumerator: BitSizeEnumerator::new(255),
+            dict_size: size,
         }
     }
 }
@@ -57,8 +64,12 @@ impl<W> Write for LZWWriter<W> where W: Write {
                         None => {
                             let next_size = self.enumerator.next().ok_or(IOError::from(IOErrorKind::Other))?;
                             let output = BitIndex::new(idx, next_size);
-                            self.lookup[idx].children[byte as usize] = Some(self.lookup.len());
-                            self.lookup.push(LZWSearchTreeNode { children: [None; 256] });
+
+                            if self.lookup.len() < self.dict_size {
+                                self.lookup[idx].children[byte as usize] = Some(self.lookup.len());
+                                self.lookup.push(LZWSearchTreeNode { children: [None; 256] });
+                            }
+
                             for bit in output {
                                 self.inner.write_bit(bit)?;
                             }
@@ -102,6 +113,7 @@ pub struct LZWReader<R> where R: Read {
     state: LZWReaderState,
     enumerator: BitSizeEnumerator,
     cache: Vec<u8>,
+    dict_size: usize,
 }
 
 #[derive(Debug)]
@@ -114,12 +126,17 @@ enum LZWReaderState {
 
 impl<R> LZWReader<R> where R: Read {
     pub fn new(reader: R) -> Self {
+        LZWReader::with_dictsize(reader, usize::max_value())
+    }
+
+    pub fn with_dictsize(reader: R, size: usize) -> Self {
         LZWReader {
             inner: BitReader::new(reader),
             dict: LZWDict::new(),
             state: LZWReaderState::Empty,
             enumerator: BitSizeEnumerator::new(255),
             cache: Vec::new(),
+            dict_size: size,
         }
     }
 
@@ -164,13 +181,15 @@ impl<R> Read for LZWReader<R> where R: Read {
                         }
                     };
 
-                    // Case K[omega]K
-                    let first_symbol = if self.dict.len() == next {
-                        self.find_first_symbol(idx)
-                    } else {
-                        self.find_first_symbol(next)
-                    };
-                    self.dict.push(LZWDictEntry { symbol: first_symbol, prefix: Some(idx) });
+                    if self.dict.len() < self.dict_size {
+                        // Case K[omega]K
+                        let first_symbol = if self.dict.len() == next {
+                            self.find_first_symbol(idx)
+                        } else {
+                            self.find_first_symbol(next)
+                        };
+                        self.dict.push(LZWDictEntry { symbol: first_symbol, prefix: Some(idx) });
+                    }
 
                     let mut entry = &self.dict[next];
                     self.cache.push(entry.symbol);
